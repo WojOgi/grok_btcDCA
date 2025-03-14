@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bitcoin DCA Simulation</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      canvas {
+        margin-top: 20px;
+      }
+      #results {
+        margin-top: 20px;
+      }
+      .simulation-result {
+        padding: 10px;
+        border: 1px solid #ccc;
+        margin-bottom: 15px;
+      }
+      #summaryTable {
+        margin-top: 20px;
+        width: 100%;
+        border-collapse: collapse;
+      }
+      #summaryTable th,
+      #summaryTable td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        text-align: left;
+      }
+      #summaryTable th {
+        background-color: #f2f2f2;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Bitcoin DCA Simulation</h1>
+    <div>
+      <label
+        for="csvFile"
+        title="Upload a CSV file containing Bitcoin price data with 'snapped_at' and 'price' columns. This data is used to simulate the DCA strategy over the specified time period."
+        >Upload Bitcoin Price Data (CSV):</label
+      >
+      <input
+        type="file"
+        id="csvFile"
+        accept=".csv"
+        title="Select a valid CSV file to load historical Bitcoin price data. Ensure the file format matches the required structure for accurate simulation results."
+      />
+    </div>
+    <div style="margin-top: 10px">
+      <label
+        for="baseDailyAmount"
+        title="Set the base daily investment amount in USD that will be invested every day. This forms the foundation of the DCA strategy, with additional investments triggered by price conditions."
+        >Base Daily Investment Amount (USD):</label
+      >
+      <input
+        type="number"
+        id="baseDailyAmount"
+        min="1"
+        step="0.01"
+        placeholder="e.g., 10"
+        title="Enter the fixed daily investment amount in USD. This value is applied consistently unless modified by the extra investment levels based on ATH thresholds."
+      />
+    </div>
+    <div style="margin-top: 10px">
+      <label
+        for="athStep"
+        title="Define the percentage step below the all-time high (ATH) to determine investment levels. This step is multiplied by the number of levels to create thresholds for additional investments."
+        >ATH Step (% Below):</label
+      >
+      <input
+        type="number"
+        id="athStep"
+        min="0"
+        step="0.1"
+        placeholder="e.g., 5"
+        title="Input the percentage step (e.g., 5%) used to calculate each investment level below the ATH. Smaller steps result in more frequent level triggers, increasing potential investment amounts."
+      />
+    </div>
+    <div style="margin-top: 10px">
+      <label
+        for="athLevels"
+        title="Specify the number of investment levels below the ATH based on the step percentage. Setting this to 0 disables additional levels, executing only the base DCA strategy."
+        >Number of Levels:</label
+      >
+      <input
+        type="number"
+        id="athLevels"
+        min="0"
+        step="1"
+        placeholder="e.g., 3"
+        title="Enter the number of levels (e.g., 0, 3) to define multiple thresholds below the ATH. A value of 0 applies only the base daily investment without extra levels."
+      />
+    </div>
+    <div style="margin-top: 10px">
+      <label
+        for="extraDailyAmount"
+        title="Set the additional daily investment amount in USD per level when the price falls below an ATH threshold. This amount is multiplied by the triggered level to determine the extra investment."
+        >Extra Daily Investment Amount per Level (USD):</label
+      >
+      <input
+        type="number"
+        id="extraDailyAmount"
+        min="0"
+        step="0.01"
+        placeholder="e.g., 20"
+        title="Input the extra amount to invest per level when the price drops below an ATH threshold. This value scales with the number of levels triggered, enhancing the DCA strategy during price dips."
+      />
+    </div>
+    <div style="margin-top: 10px">
+      <label
+        for="years"
+        title="Define the time period in years for the simulation based on the uploaded price data. This determines the duration over which the DCA strategy is applied."
+        >Time Period (Years):</label
+      >
+      <input
+        type="number"
+        id="years"
+        min="1"
+        step="1"
+        placeholder="e.g., 5"
+        title="Enter the number of years to simulate the DCA strategy. The simulation uses available price data within this period, starting from the latest date backward."
+      />
+    </div>
+    <div style="margin-top: 10px">
+      <button
+        onclick="runSimulation()"
+        title="Execute the DCA simulation with the current input parameters. This generates new results and updates the summary table and chart based on the provided data and settings."
+      >
+        Run Simulation
+      </button>
+      <button
+        onclick="resetSimulations()"
+        style="margin-left: 10px"
+        title="Clear all previous simulation results and the summary table. This resets the simulation count and data while preserving the current input parameters for the next run."
+      >
+        Reset
+      </button>
+    </div>
+    <canvas
+      id="priceChart"
+      title="Displays a line graph of Bitcoin prices based on the uploaded CSV data. The green portion highlights the time period selected for the most recent simulation, aiding in visual analysis of price trends."
+    ></canvas>
+    <h2>Simulation Summary</h2>
+    <table
+      id="summaryTable"
+      title="Provides a concise overview of all simulations, showing input parameters and ROI for each. Use this table to compare the performance of different DCA strategies across multiple scenarios."
+    >
+      <thead>
+        <tr>
+          <th>Simulation</th>
+          <th>Base Daily (USD)</th>
+          <th>ATH Step (%)</th>
+          <th>Levels</th>
+          <th>Extra Daily (USD)</th>
+          <th>Time Period (Years)</th>
+          <th>ROI (%)</th>
+          <th>Total Invested (USD)</th>
+          <th>Total Bitcoin Purchased</th>
+        </tr>
+      </thead>
+      <tbody id="summaryTableBody"></tbody>
+    </table>
+    <div
+      id="results"
+      title="Displays detailed results for each simulation, including investment amounts, Bitcoin purchased, and financial metrics. Review these sections to analyze the performance of individual scenarios in depth."
+    ></div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <script>
+      let priceData = [];
+      let chart;
+      let simulationCount = 0; // Track the number of simulations
+      let simulationSummary = []; // Store summary data for the table
+
+      // Function to parse CSV file
+      document
+        .getElementById("csvFile")
+        .addEventListener("change", function (e) {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          Papa.parse(file, {
+            header: true,
+            dynamicTyping: true,
+            complete: function (results) {
+              priceData = results.data
+                .filter(
+                  (row) =>
+                    row.snapped_at &&
+                    row.price !== undefined &&
+                    row.price !== null
+                )
+                .map((row) => ({
+                  date: new Date(row.snapped_at),
+                  price: parseFloat(row.price),
+                }))
+                .sort((a, b) => a.date - b.date);
+
+              // Validate parsed data
+              if (
+                priceData.some((d) => isNaN(d.date.getTime()) || isNaN(d.price))
+              ) {
+                alert(
+                  'Invalid data format detected. Ensure dates are in "YYYY-MM-DD HH:MM:SS UTC" format and prices are numeric.'
+                );
+                priceData = [];
+                return;
+              }
+
+              plotPriceData();
+            },
+            error: function (error) {
+              alert("Error parsing CSV file: " + error.message);
+            },
+          });
+        });
+
+      // Function to plot Bitcoin price data
+      function plotPriceData() {
+        const ctx = document.getElementById("priceChart").getContext("2d");
+        if (chart) chart.destroy();
+
+        chart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: priceData.map((d) => d.date.toLocaleDateString()),
+            datasets: [
+              {
+                label: "Bitcoin Price (USD)",
+                data: priceData.map((d) => d.price),
+                borderColor: "blue",
+                fill: false,
+              },
+            ],
+          },
+          options: {
+            scales: {
+              x: { title: { display: true, text: "Date" } },
+              y: { title: { display: true, text: "Price (USD)" } },
+            },
+          },
+        });
+      }
+
+      // Function to update the summary table
+      function updateSummaryTable() {
+        const tbody = document.getElementById("summaryTableBody");
+        tbody.innerHTML = ""; // Clear existing rows
+
+        simulationSummary.forEach((summary, index) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+                    <td>Simulation ${index + 1}</td>
+                    <td>$${summary.baseDailyAmount.toFixed(2)}</td>
+                    <td>${summary.athStep.toFixed(1)}%</td>
+                    <td>${summary.athLevels}</td>
+                    <td>$${summary.extraDailyAmount.toFixed(2)}</td>
+                    <td>${summary.years}</td>
+                    <td>${summary.roi.toFixed(2)}%</td>
+                    <td>$${summary.totalInvested.toFixed(2)}</td>
+                    <td>${summary.totalBtc.toFixed(8)}</td>
+                `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // Function to reset simulations
+      function resetSimulations() {
+        document.getElementById("results").innerHTML = ""; // Clear detailed results
+        document.getElementById("summaryTableBody").innerHTML = ""; // Clear summary table
+        simulationCount = 0; // Reset simulation count
+        simulationSummary = []; // Clear summary data
+        // Input fields are automatically preserved as they are not modified
+      }
+
+      // Function to run DCA simulation
+      function runSimulation() {
+        if (priceData.length === 0) {
+          alert("Please upload a valid Bitcoin price data CSV file.");
+          return;
+        }
+
+        const baseDailyAmount = parseFloat(
+          document.getElementById("baseDailyAmount").value
+        );
+        const athStep = parseFloat(document.getElementById("athStep").value);
+        const athLevels = parseInt(document.getElementById("athLevels").value);
+        const extraDailyAmount = parseFloat(
+          document.getElementById("extraDailyAmount").value
+        );
+        const years = parseInt(document.getElementById("years").value);
+
+        // Fixed validation: Remove !athLevels to allow 0, and rely on athLevels < 0 check
+        if (!baseDailyAmount || !years || isNaN(athStep) || !extraDailyAmount) {
+          alert(
+            "Please enter valid values for all inputs: Base Daily Amount, ATH Step, Extra Daily Amount, and Time Period."
+          );
+          return;
+        }
+
+        if (athStep <= 0 || athStep > 100) {
+          alert("ATH Step must be between 0 and 100.");
+          return;
+        }
+
+        // Allow athLevels to be 0
+        if (athLevels < 0) {
+          alert("Number of Levels must be 0 or greater.");
+          return;
+        }
+
+        const today = priceData[priceData.length - 1].date;
+        const startDate = new Date(today);
+        startDate.setFullYear(today.getFullYear() - years);
+
+        // Filter price data for the selected period
+        const simulationData = priceData.filter(
+          (d) => d.date >= startDate && d.date <= today
+        );
+
+        if (simulationData.length === 0) {
+          alert("No price data available for the selected time period.");
+          return;
+        }
+
+        // Perform DCA simulation with multi-level ATH-based logic
+        let totalInvested = 0;
+        let totalBtc = 0;
+        let allTimeHigh = simulationData[0].price; // Initialize ATH with the first price
+        const levelCounts = new Array(athLevels).fill(0); // Track days for each level, empty array if athLevels = 0
+        let maxDailyInvestment = baseDailyAmount; // Track maximum daily investment
+
+        simulationData.forEach((day) => {
+          // Update all-time high
+          if (day.price > allTimeHigh) {
+            allTimeHigh = day.price;
+          }
+
+          // Determine the level (if any) based on price drop below ATH, skip if athLevels = 0
+          let level = 0;
+          if (athLevels > 0) {
+            for (let i = 1; i <= athLevels; i++) {
+              const thresholdPercentage = athStep * i;
+              const thresholdPrice =
+                allTimeHigh * (1 - thresholdPercentage / 100);
+              if (day.price <= thresholdPrice) {
+                level = i;
+              } else {
+                break;
+              }
+            }
+          }
+
+          // Update level counts if levels are active
+          if (athLevels > 0 && level > 0) {
+            levelCounts[level - 1]++;
+          }
+
+          // Calculate daily investment amount
+          const dailyInvestment =
+            baseDailyAmount + (athLevels > 0 ? level * extraDailyAmount : 0);
+          maxDailyInvestment = Math.max(maxDailyInvestment, dailyInvestment);
+
+          // Calculate Bitcoin purchased
+          const btcBought = dailyInvestment / day.price;
+          totalInvested += dailyInvestment;
+          totalBtc += btcBought;
+        });
+
+        const finalPrice = simulationData[simulationData.length - 1].price;
+        const portfolioValue = totalBtc * finalPrice;
+        const netProfit = portfolioValue - totalInvested;
+        const roi = (netProfit / totalInvested) * 100;
+
+        // Calculate additional statistics
+        const numberOfTradingDays = simulationData.length;
+        const averageDailyDca = totalInvested / numberOfTradingDays;
+        const averageBtcPerDay = totalBtc / numberOfTradingDays;
+
+        // Prepare level summary for display, skip if athLevels = 0
+        let levelSummary = "";
+        if (athLevels > 0) {
+          for (let i = 0; i < athLevels; i++) {
+            const thresholdPercentage = athStep * (i + 1);
+            levelSummary += `<p><strong>Level ${
+              i + 1
+            } (${thresholdPercentage.toFixed(1)}% below ATH):</strong> ${
+              levelCounts[i]
+            } days</p>`;
+          }
+        } else {
+          levelSummary =
+            "<p><strong>No additional levels applied; base DCA only.</strong></p>";
+        }
+
+        // Increment simulation count and create a new result div
+        simulationCount++;
+        const resultDiv = document.createElement("div");
+        resultDiv.className = "simulation-result";
+        resultDiv.innerHTML = `
+                <h2>Simulation ${simulationCount} Results</h2>
+                <p><strong>Time Period:</strong> ${years} years</p>
+                <p><strong>Base Daily Investment:</strong> $${baseDailyAmount.toFixed(
+                  2
+                )}</p>
+                <p><strong>ATH Step:</strong> ${athStep.toFixed(1)}%</p>
+                <p><strong>Number of Levels:</strong> ${athLevels}</p>
+                <p><strong>Extra Daily Investment per Level:</strong> $${extraDailyAmount.toFixed(
+                  2
+                )}</p>
+                ${levelSummary}
+                <p><strong>Number of Trading Days:</strong> ${numberOfTradingDays}</p>
+                <p><strong>Maximum Daily DCA Size:</strong> $${maxDailyInvestment.toFixed(
+                  2
+                )}</p>
+                <p><strong>Average Daily DCA Size:</strong> $${averageDailyDca.toFixed(
+                  2
+                )}</p>
+                <p><strong>Average Bitcoin Purchased per Day:</strong> ${averageBtcPerDay.toFixed(
+                  8
+                )} BTC</p>
+                <p><strong>Total Invested:</strong> $${totalInvested.toFixed(
+                  2
+                )}</p>
+                <p><strong>Total Bitcoin Purchased:</strong> ${totalBtc.toFixed(
+                  8
+                )} BTC</p>
+                <p><strong>Final Portfolio Value:</strong> $${portfolioValue.toFixed(
+                  2
+                )}</p>
+                <p><strong>Profit/Loss:</strong> $${netProfit.toFixed(2)}</p>
+                <p><strong>Return on Investment (ROI):</strong> ${roi.toFixed(
+                  2
+                )}%</p>
+            `;
+
+        // Append the new result div to the results container
+        document.getElementById("results").appendChild(resultDiv);
+
+        // Add to summary data and update table
+        simulationSummary.push({
+          baseDailyAmount,
+          athStep,
+          athLevels,
+          extraDailyAmount,
+          years,
+          roi,
+          totalInvested,
+          totalBtc,
+        });
+        updateSummaryTable();
+
+        // Update chart to highlight the most recent DCA period
+        chart.data.datasets[0].borderColor = priceData.map((d) =>
+          d.date >= startDate && d.date <= today ? "green" : "blue"
+        );
+        chart.update();
+      }
+    </script>
+  </body>
+</html>
