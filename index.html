@@ -55,17 +55,17 @@
     </div>
     <div style="margin-top: 10px">
       <label
-        for="baseDailyAmount"
-        title="Set the base daily investment amount in USD that will be invested every day. This forms the foundation of the DCA strategy, with additional investments triggered by price conditions."
-        >Base Daily Investment Amount (USD):</label
+        for="baseInvestmentAmount"
+        title="Set the base investment amount in USD that will be invested at the selected frequency. This forms the foundation of the DCA strategy, with additional investments triggered by price conditions."
+        >Base Investment Amount (USD):</label
       >
       <input
         type="number"
-        id="baseDailyAmount"
+        id="baseInvestmentAmount"
         min="1"
         step="0.01"
         placeholder="e.g., 10"
-        title="Enter the fixed daily investment amount in USD. This value is applied consistently unless modified by the extra investment levels based on ATH thresholds."
+        title="Enter the fixed investment amount in USD to be applied at the chosen frequency (daily, weekly, or monthly). This value is applied consistently unless modified by extra investment levels based on ATH thresholds."
       />
     </div>
     <div style="margin-top: 10px">
@@ -95,23 +95,38 @@
         min="0"
         step="1"
         placeholder="e.g., 3"
-        title="Enter the number of levels (e.g., 0, 3) to define multiple thresholds below the ATH. A value of 0 applies only the base daily investment without extra levels."
+        title="Enter the number of levels (e.g., 0, 3) to define multiple thresholds below the ATH. A value of 0 applies only the base investment without extra levels."
       />
     </div>
     <div style="margin-top: 10px">
       <label
-        for="extraDailyAmount"
-        title="Set the additional daily investment amount in USD per level when the price falls below an ATH threshold. This amount is multiplied by the triggered level to determine the extra investment."
-        >Extra Daily Investment Amount per Level (USD):</label
+        for="extraInvestmentAmount"
+        title="Set the additional investment amount in USD per level when the price falls below an ATH threshold. This amount is multiplied by the triggered level to determine the extra investment at the selected frequency."
+        >Extra Investment Amount per Level (USD):</label
       >
       <input
         type="number"
-        id="extraDailyAmount"
+        id="extraInvestmentAmount"
         min="0"
         step="0.01"
         placeholder="e.g., 20"
-        title="Input the extra amount to invest per level when the price drops below an ATH threshold. This value scales with the number of levels triggered, enhancing the DCA strategy during price dips."
+        title="Input the extra amount to invest per level when the price drops below an ATH threshold. This value scales with the number of levels triggered, enhancing the DCA strategy during price dips at the chosen frequency."
       />
+    </div>
+    <div style="margin-top: 10px">
+      <label
+        for="frequency"
+        title="Choose the frequency at which investments are made: daily, weekly, or monthly. This determines how often the base and extra investments are applied during the simulation period."
+        >Investment Frequency:</label
+      >
+      <select
+        id="frequency"
+        title="Select the frequency for investments: 'Daily' for every trading day, 'Weekly' for once per week, or 'Monthly' for once per month. The simulation adjusts the investment schedule accordingly."
+      >
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
     </div>
     <div style="margin-top: 10px">
       <label
@@ -150,15 +165,16 @@
     <h2>Simulation Summary</h2>
     <table
       id="summaryTable"
-      title="Provides a concise overview of all simulations, showing input parameters and ROI for each. Use this table to compare the performance of different DCA strategies across multiple scenarios."
+      title="Provides a concise overview of all simulations, showing input parameters, frequency, and ROI for each. Use this table to compare the performance of different DCA strategies across multiple scenarios."
     >
       <thead>
         <tr>
           <th>Simulation</th>
-          <th>Base Daily (USD)</th>
+          <th>Base Amount (USD)</th>
           <th>ATH Step (%)</th>
           <th>Levels</th>
-          <th>Extra Daily (USD)</th>
+          <th>Extra Amount (USD)</th>
+          <th>Frequency</th>
           <th>Time Period (Years)</th>
           <th>ROI (%)</th>
           <th>Total Invested (USD)</th>
@@ -260,10 +276,14 @@
           const row = document.createElement("tr");
           row.innerHTML = `
                     <td>Simulation ${index + 1}</td>
-                    <td>$${summary.baseDailyAmount.toFixed(2)}</td>
+                    <td>$${summary.baseInvestmentAmount.toFixed(2)}</td>
                     <td>${summary.athStep.toFixed(1)}%</td>
                     <td>${summary.athLevels}</td>
-                    <td>$${summary.extraDailyAmount.toFixed(2)}</td>
+                    <td>$${summary.extraInvestmentAmount.toFixed(2)}</td>
+                    <td>${
+                      summary.frequency.charAt(0).toUpperCase() +
+                      summary.frequency.slice(1)
+                    }</td>
                     <td>${summary.years}</td>
                     <td>${summary.roi.toFixed(2)}%</td>
                     <td>$${summary.totalInvested.toFixed(2)}</td>
@@ -282,6 +302,37 @@
         // Input fields are automatically preserved as they are not modified
       }
 
+      // Function to determine if a day is an investment day based on frequency
+      function isInvestmentDay(day, startDate, frequency) {
+        if (frequency === "daily") {
+          return true; // Every day is an investment day
+        }
+
+        const daysSinceStart = Math.floor(
+          (day.date - startDate) / (1000 * 60 * 60 * 24)
+        );
+
+        if (frequency === "weekly") {
+          return daysSinceStart % 7 === 0; // Invest on the first day of each week (every 7 days)
+        }
+
+        if (frequency === "monthly") {
+          // Invest on the first trading day of each month
+          const currentMonth = day.date.getMonth();
+          const currentYear = day.date.getFullYear();
+          const previousDay = new Date(day.date);
+          previousDay.setDate(day.date.getDate() - 1);
+          return (
+            previousDay.getMonth() !== currentMonth ||
+            (daysSinceStart === 0 &&
+              currentMonth === startDate.getMonth() &&
+              currentYear === startDate.getFullYear())
+          );
+        }
+
+        return false;
+      }
+
       // Function to run DCA simulation
       function runSimulation() {
         if (priceData.length === 0) {
@@ -289,20 +340,26 @@
           return;
         }
 
-        const baseDailyAmount = parseFloat(
-          document.getElementById("baseDailyAmount").value
+        const baseInvestmentAmount = parseFloat(
+          document.getElementById("baseInvestmentAmount").value
         );
         const athStep = parseFloat(document.getElementById("athStep").value);
         const athLevels = parseInt(document.getElementById("athLevels").value);
-        const extraDailyAmount = parseFloat(
-          document.getElementById("extraDailyAmount").value
+        const extraInvestmentAmount = parseFloat(
+          document.getElementById("extraInvestmentAmount").value
         );
+        const frequency = document.getElementById("frequency").value;
         const years = parseInt(document.getElementById("years").value);
 
-        // Fixed validation: Remove !athLevels to allow 0, and rely on athLevels < 0 check
-        if (!baseDailyAmount || !years || isNaN(athStep) || !extraDailyAmount) {
+        // Validate inputs
+        if (
+          !baseInvestmentAmount ||
+          !years ||
+          isNaN(athStep) ||
+          !extraInvestmentAmount
+        ) {
           alert(
-            "Please enter valid values for all inputs: Base Daily Amount, ATH Step, Extra Daily Amount, and Time Period."
+            "Please enter valid values for all inputs: Base Investment Amount, ATH Step, Extra Investment Amount, Frequency, and Time Period."
           );
           return;
         }
@@ -312,7 +369,6 @@
           return;
         }
 
-        // Allow athLevels to be 0
         if (athLevels < 0) {
           alert("Number of Levels must be 0 or greater.");
           return;
@@ -337,13 +393,21 @@
         let totalBtc = 0;
         let allTimeHigh = simulationData[0].price; // Initialize ATH with the first price
         const levelCounts = new Array(athLevels).fill(0); // Track days for each level, empty array if athLevels = 0
-        let maxDailyInvestment = baseDailyAmount; // Track maximum daily investment
+        let maxInvestment = baseInvestmentAmount; // Track maximum investment amount per investment
+        let investmentDays = 0; // Track the number of actual investment days
 
         simulationData.forEach((day) => {
           // Update all-time high
           if (day.price > allTimeHigh) {
             allTimeHigh = day.price;
           }
+
+          // Check if this day is an investment day based on frequency
+          if (!isInvestmentDay(day, startDate, frequency)) {
+            return; // Skip this day if it's not an investment day
+          }
+
+          investmentDays++; // Increment the count of investment days
 
           // Determine the level (if any) based on price drop below ATH, skip if athLevels = 0
           let level = 0;
@@ -365,14 +429,15 @@
             levelCounts[level - 1]++;
           }
 
-          // Calculate daily investment amount
-          const dailyInvestment =
-            baseDailyAmount + (athLevels > 0 ? level * extraDailyAmount : 0);
-          maxDailyInvestment = Math.max(maxDailyInvestment, dailyInvestment);
+          // Calculate investment amount for this investment day
+          const investmentAmount =
+            baseInvestmentAmount +
+            (athLevels > 0 ? level * extraInvestmentAmount : 0);
+          maxInvestment = Math.max(maxInvestment, investmentAmount);
 
           // Calculate Bitcoin purchased
-          const btcBought = dailyInvestment / day.price;
-          totalInvested += dailyInvestment;
+          const btcBought = investmentAmount / day.price;
+          totalInvested += investmentAmount;
           totalBtc += btcBought;
         });
 
@@ -382,9 +447,10 @@
         const roi = (netProfit / totalInvested) * 100;
 
         // Calculate additional statistics
-        const numberOfTradingDays = simulationData.length;
-        const averageDailyDca = totalInvested / numberOfTradingDays;
-        const averageBtcPerDay = totalBtc / numberOfTradingDays;
+        const numberOfTradingDays = simulationData.length; // Total days in the period
+        const numberOfInvestmentDays = investmentDays; // Actual days where investments were made
+        const averageDcaPerInvestment = totalInvested / numberOfInvestmentDays;
+        const averageBtcPerInvestment = totalBtc / numberOfInvestmentDays;
 
         // Prepare level summary for display, skip if athLevels = 0
         let levelSummary = "";
@@ -409,23 +475,27 @@
         resultDiv.innerHTML = `
                 <h2>Simulation ${simulationCount} Results</h2>
                 <p><strong>Time Period:</strong> ${years} years</p>
-                <p><strong>Base Daily Investment:</strong> $${baseDailyAmount.toFixed(
+                <p><strong>Base Investment Amount:</strong> $${baseInvestmentAmount.toFixed(
                   2
                 )}</p>
                 <p><strong>ATH Step:</strong> ${athStep.toFixed(1)}%</p>
                 <p><strong>Number of Levels:</strong> ${athLevels}</p>
-                <p><strong>Extra Daily Investment per Level:</strong> $${extraDailyAmount.toFixed(
+                <p><strong>Extra Investment Amount per Level:</strong> $${extraInvestmentAmount.toFixed(
                   2
                 )}</p>
+                <p><strong>Investment Frequency:</strong> ${
+                  frequency.charAt(0).toUpperCase() + frequency.slice(1)
+                }</p>
                 ${levelSummary}
-                <p><strong>Number of Trading Days:</strong> ${numberOfTradingDays}</p>
-                <p><strong>Maximum Daily DCA Size:</strong> $${maxDailyInvestment.toFixed(
+                <p><strong>Total Trading Days in Period:</strong> ${numberOfTradingDays}</p>
+                <p><strong>Number of Investment Days:</strong> ${numberOfInvestmentDays}</p>
+                <p><strong>Maximum DCA Size per Investment:</strong> $${maxInvestment.toFixed(
                   2
                 )}</p>
-                <p><strong>Average Daily DCA Size:</strong> $${averageDailyDca.toFixed(
+                <p><strong>Average DCA Size per Investment:</strong> $${averageDcaPerInvestment.toFixed(
                   2
                 )}</p>
-                <p><strong>Average Bitcoin Purchased per Day:</strong> ${averageBtcPerDay.toFixed(
+                <p><strong>Average Bitcoin Purchased per Investment:</strong> ${averageBtcPerInvestment.toFixed(
                   8
                 )} BTC</p>
                 <p><strong>Total Invested:</strong> $${totalInvested.toFixed(
@@ -448,10 +518,11 @@
 
         // Add to summary data and update table
         simulationSummary.push({
-          baseDailyAmount,
+          baseInvestmentAmount,
           athStep,
           athLevels,
-          extraDailyAmount,
+          extraInvestmentAmount,
+          frequency,
           years,
           roi,
           totalInvested,
